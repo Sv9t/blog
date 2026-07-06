@@ -6,9 +6,7 @@ updatedDate: "2026-07-06"
 tags: ["docker", "best-practices"]
 ---
 
-*Собрано на базе Docker Docs, Snyk, Sysdig, Northflank и ещё пачки зарубежных статей — ссылки в конце.*
-
-Когда я только начал писать `Dockerfile`, у меня был один подход: взять `ubuntu:latest`, накидать туда `apt-get install`, скопировать весь проект через `COPY . .` и радоваться, что «работает». Работало-то оно работало, только образ весил под гигабайт, собирался минут по пять и в нём сидел `root` с парой забытых токенов. Со временем я переписал свой «шаблонный» Dockerfile раз десять — и ниже собрал то, к чему в итоге пришёл.
+Когда я только начал писать `Dockerfile`, у меня был один подход: взять `ubuntu`, накидать туда `apt-get install`, скопировать весь проект через `COPY . .` и радоваться, что «работает». Работало-то оно работало, только образ весил под гигабайт, собирался минут по пять и в нём сидел `root` с парой забытых токенов. Со временем я переписал свой «шаблонный» Dockerfile раз десять — и ниже собрал то, к чему в итоге пришёл.
 
 ## Базовый образ: меньше — лучше
 
@@ -28,7 +26,7 @@ FROM scratch
 
 У меня правило такое: `ubuntu/debian` → `*-slim` → `alpine` → `distroless` → `scratch`. Останавливаюсь на самом маленьком, на котором приложение ещё запускается. Для Go-сервисов, кстати, `scratch` + статический бинарник — это образ в пару мегабайт, красота.
 
-## Версию — фиксировать, и никакого `latest`
+## Версию надо обязательно фиксировать, и никакого `latest`
 
 Тут я однажды обжёгся. Собрал образ, всё работало, через неделю пересобираю в CI — и приложение падает. Оказалось, `node:latest` за эту неделю стал указывать на новую мажорную версию, а мой код с ней не дружил. С тех пор теги фиксирую жёстко.
 
@@ -233,18 +231,3 @@ trivy image myimage:latest
 Когда я начал применять это не всё сразу, а по пунктам, даже старый «толстый» Dockerfile за пару итераций превратился во что-то, что не стыдно показать.
 
 ---
-
-### Источники
-
-Материал собран и переработан из следующих зарубежных источников:
-
-1. [Building best practices — Docker Docs](https://docs.docker.com/build/building/best-practices/)
-2. [Writing a Dockerfile — Docker Docs](https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/)
-3. [10 Docker Image Security Best Practices — Snyk](https://snyk.io/blog/10-docker-image-security-best-practices/)
-4. [Top 21 Dockerfile best practices for container security — Sysdig](https://www.sysdig.com/learn-cloud-native/dockerfile-best-practices)
-5. [Docker Build and Buildx best practices for optimized builds — Northflank](https://northflank.com/blog/docker-build-and-buildx-best-practices-for-optimized-builds)
-6. [Dockerfile Best Practices Explained — Dev.to](https://dev.to/kalkwst/dockerfile-best-practices-explained-interlude-post-2-3elj)
-7. [Best Practices for Building Efficient Docker Images — Medium](https://medium.com/@mehar.chand.cloud/best-practices-for-building-efficient-docker-images-20f1335eb202)
-8. [Docker Best Practices — Emma Benjaminson](https://sassafras13.github.io/DockerBestPractices/)
-9. [9 Docker Best Practices You Should Know — Alex Xu](https://www.linkedin.com/posts/alexxubyte_systemdesign-coding-interviewtips-activity-7300556507740266496-10Fi)
-10. [Understanding Multi-Stage Docker Builds — Blacksmith](https://www.blacksmith.sh/blog/understanding-multi-stage-docker-builds)
