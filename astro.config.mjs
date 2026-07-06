@@ -19,6 +19,18 @@ export default defineConfig({
   integrations: [
     react(),
   ],
+  markdown: {
+    // Подсветка синтаксиса: обе темы рендерятся в инлайновые стили,
+    // а в global.css активная выбирается по классу .dark на <html>,
+    // чтобы блоки кода переключались вместе с темой сайта.
+    shikiConfig: {
+      themes: {
+        light: 'github-light',
+        dark: 'github-dark',
+      },
+      wrap: true,
+    },
+  },
   vite: {
     plugins: [tailwindcss()],
   },

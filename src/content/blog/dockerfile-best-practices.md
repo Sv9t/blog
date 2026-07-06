@@ -1,7 +1,250 @@
 ---
-title: "Docker: ловначание постовать повідопаний Dockerfile"
-description: "Как удате файжа одновах м 3 рака и вукаровах соблок."
+title: "Dockerfile: как я пришёл к лучшим практикам"
+description: "Как перестать собирать толстые и небезопасные образы: минимальные базовые образы, многоэтапная сборка, кэш слоёв, .dockerignore, запуск не от root и хранение секретов — на примерах из практики."
 pubDate: "2023-10-02"
+updatedDate: "2026-07-06"
 tags: ["docker", "best-practices"]
 ---
-## Опредутують одноваходимое одновах розм на с страниват скажа. Молитьствика и прошейзнатую порознатую насоблоновах убакатую гогорами фикация.
+
+*Собрано на базе Docker Docs, Snyk, Sysdig, Northflank и ещё пачки зарубежных статей — ссылки в конце.*
+
+Когда я только начал писать `Dockerfile`, у меня был один подход: взять `ubuntu:latest`, накидать туда `apt-get install`, скопировать весь проект через `COPY . .` и радоваться, что «работает». Работало-то оно работало, только образ весил под гигабайт, собирался минут по пять и в нём сидел `root` с парой забытых токенов. Со временем я переписал свой «шаблонный» Dockerfile раз десять — и ниже собрал то, к чему в итоге пришёл.
+
+## Базовый образ: меньше — лучше
+
+Первое, на чём я сэкономил, — это базовый образ. Тащить полноценный Ubuntu ради Node.js-приложения нет смысла: тебе не нужны ни пакетный менеджер на 200 МБ, ни половина системных утилит.
+
+```dockerfile
+# Раньше: 900 МБ со всяким мусором «на всякий случай»
+FROM ubuntu:latest
+
+# Сейчас: только то, что нужно для запуска
+FROM node:22-alpine
+# или ещё строже — образ без shell вообще
+FROM gcr.io/distroless/nodejs22
+# или для статического бинарника — пустой образ
+FROM scratch
+```
+
+У меня правило такое: `ubuntu/debian` → `*-slim` → `alpine` → `distroless` → `scratch`. Останавливаюсь на самом маленьком, на котором приложение ещё запускается. Для Go-сервисов, кстати, `scratch` + статический бинарник — это образ в пару мегабайт, красота.
+
+## Версию — фиксировать, и никакого `latest`
+
+Тут я однажды обжёгся. Собрал образ, всё работало, через неделю пересобираю в CI — и приложение падает. Оказалось, `node:latest` за эту неделю стал указывать на новую мажорную версию, а мой код с ней не дружил. С тех пор теги фиксирую жёстко.
+
+```dockerfile
+# Плохо: непонятно, что внутри, и завтра это может быть другое
+FROM node:latest
+
+# Приемлемо: фиксируем минор
+FROM node:22.4-alpine
+
+# Идеально: фиксируем по digest — образ гарантированно тот же
+FROM node:22-alpine@sha256:a8560b36e8b8210634f77d9f7f9efd7ffa463e380b75e2e74aff4511df3ef88c
+```
+
+С `digest`'ом 100% воспроизводимость, но за это приходится платить тем, что безопасные апдейты сами не прилетят — обновлять версию надо вручную (или через Renovate / Docker Scout, если лень, а мне обычно лень).
+
+## `.dockerignore` — первая защита от себя самого
+
+Про этот файл я почему-то долго не знал. А без него в build context улетает вообще всё содержимое папки: `node_modules`, `.git`, `dist`, и — что хуже всего — `.env` с паролями. Т. к. контекст целиком уезжает в демон, секреты спокойно ложатся в кэш слоёв и оттуда их потом можно достать.
+
+```ini
+# .dockerignore
+node_modules
+npm-debug.log
+.git
+.gitignore
+dist
+coverage
+.env
+.env.*
+*.md
+Dockerfile
+.dockerignore
+```
+
+Теперь `.dockerignore` — первое, что я кладу рядом с `Dockerfile`, ещё до того, как напишу первую инструкцию.
+
+## Порядок инструкций: зависимости отдельно, код отдельно
+
+Это, наверное, тот приём, который дал самый заметный прирост скорости сборки. Дело в кэше слоёв: каждая инструкция (`RUN`, `COPY`, `ADD`) — это слой, и Docker его переиспользует, пока не наткнётся на изменение. Как только слой инвалидирован — **всё, что ниже, пересобирается заново**.
+
+Поэтому зависимости (меняются редко) я ставлю **выше**, а исходники (меняются часто) копирую **ниже**:
+
+```dockerfile
+# Плохо: меняешь запятую в коде — переустанавливаются все npm-пакеты
+COPY . .
+RUN npm ci
+
+# Хорошо: копирую только манифесты, ставлю deps, потом — код
+COPY package*.json ./
+RUN npm ci
+COPY . .
+```
+
+То же самое для Python (`requirements.txt`), Go (`go.mod` / `go.sum`), Rust (`Cargo.toml` / `Cargo.lock`) — сначала файлы зависимостей, потом установка, потом остальной код. Когда я это сделал, сборка с кэшем стала занимать секунды вместо минут.
+
+## Объединять `RUN` и убирать за собой
+
+Когда-то у меня было три `RUN` подряд: `update`, `install curl`, `install nginx`. Получалось три слоя, плюс кэш `apt` оставался в образе навсегда. Сейчас всё в один `RUN`, и кэш я удаляю в нём же:
+
+```dockerfile
+# Плохо: 3 слоя + кэш apt оседает в финальном образе
+RUN apt-get update
+RUN apt-get install -y curl
+RUN apt-get install -y nginx
+
+# Хорошо: 1 слой, свежий индекс, без рекомендуемых пакетов, кэш удалён
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        nginx \
+ && rm -rf /var/lib/apt/lists/*
+```
+
+Тут есть тонкость, на которую я в своё время наступил: `apt-get update` **всегда** в одном `RUN` с `install`. Если разнести — `update` закэшируется, и при следующей сборке ты получишь устаревший индекс и старые версии пакетов, хоть и «свежие» по виду. Ну и пакеты сортирую по алфавиту — так и читать приятнее, и проще заметить, если поставил что-то дважды.
+
+## Multi-stage: собирать в большом, запускать в маленьком
+
+Идея в том, что компиляторы, dev-зависимости и временные файлы нужны **на этапе сборки**, а в рантайме от них один вред — место и уязвимости. Multi-stage позволяет собирать в полном образе, а в финальный тащить только артефакт.
+
+```dockerfile
+# Этап 1: сборка
+FROM golang:1.22-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /app -ldflags="-s -w" ./cmd/server
+
+# Этап 2: только бинарник в пустом образе
+FROM scratch
+COPY --from=builder /app /app
+EXPOSE 8080
+ENTRYPOINT ["/app"]
+```
+
+Для Node.js — та же логика: собирать с dev-зависимостями в полном образе, а запускать в `node:*-alpine` с `npm ci --omit=dev`. Экономия по размеру получается в разы, а по уязвимостям — ещё больше, потому что в финальном образе нет ни компиляторов, ни `gcc`, ни лишних либ.
+
+## `COPY`, а не `ADD`
+
+Здесь коротко. `ADD` умеет качать по URL и автоматически распаковывать архивы — звучит удобно, но на практике это сюрпризы: подменённый архив по сети, zip-бомба, неявное поведение, которое сложно отлаживать. `COPY` делает ровно одно — копирует файлы. Поэтому по умолчанию я ставлю `COPY`, а `ADD` — только если реально нужна автораспаковка tar.
+
+```dockerfile
+# Плохо: неявная загрузка по сети + неявная распаковка
+ADD https://example.com/app.tar.gz /usr/src/
+ADD app.tar.gz /usr/src/
+
+# Хорошо: явное копирование локальных файлов
+COPY . /usr/src/app
+```
+
+## Не работать от `root`
+
+Если в `Dockerfile` нет `USER`, контейнер работает от `root`. Сам по себе `root` внутри контейнера — ещё не конец света, но в сочетании с уязвимостью в приложении это прямой путь к повышению привилегий. Я просто завожу отдельного пользователя и переключаюсь на него:
+
+```dockerfile
+FROM node:22-alpine
+
+# Создаём группу и пользователя с фиксированным UID/GID
+RUN addgroup -S app && adduser -S app -G app -u 1001
+
+WORKDIR /app
+COPY --chown=app:app . .
+USER app
+
+CMD ["node", "server.js"]
+```
+
+В готовых образах пользователь часто уже есть: `node` в `node:*`, `app` в `python:*`. Не забывайте только про `--chown` в `COPY`, иначе файлы достанутся `root`, и ваш `app` их не прочтёт — я так один раз минут двадцать искал, почему приложение падает с «permission denied».
+
+## Секреты — не в слоях
+
+Это самая скользкая тема. `COPY .env`, `RUN curl -H "Authorization: Bearer xxx"`, ключи в `ENV` — всё это остаётся в истории слоёв **навсегда**, даже если потом удалить файл. Достать секрет из образа можно банальным `docker history`, и неважно, что ты «удалил» его в следующем слое.
+
+```dockerfile
+# Плохо: токен навсегда в слое
+ARG NPM_TOKEN
+RUN echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc && npm ci
+
+# Хорошо: BuildKit Secrets — монтируется только на время шага, не кэшируется
+# syntax=docker/dockerfile:1
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci
+```
+
+Сборка с пробросом секрета:
+
+```bash
+docker build --secret id=npmrc,src=$HOME/.npmrc .
+```
+
+Для рантайма (пароли БД, API-ключи) — `docker secret`, переменные в оркестраторе или файлы через volume, но **никогда** не запекать в образ. Я для себя запомнил так: то, что попало в образ, надо считать скомпрометированным.
+
+## Один контейнер — один процесс
+
+Раньше мне хотелось запихнуть в один контейнер и приложение, и базу, и воркер — чтобы «всё в одном месте». На практике это мучение: не масштабируется, не обновляется нормально, логи свалены в кучу. Сейчас я строго разделяю: веб-приложение, БД, кэш — каждый со своим образом и своим контейнером. Контейнер должен быть эфемерным: остановил, пересоздал, поднял — и ничего не сломалось.
+
+## `ENTRYPOINT` + `CMD`: фиксируем команду и даём дефолт
+
+Тут я тоже долго делал неправильно. `ENTRYPOINT` задаёт неизменную команду, а `CMD` — аргументы по умолчанию, которые можно переопределить при `docker run`. И обязательно exec-форма (массив), чтобы процесс стал PID 1 и корректно получал сигналы — иначе при `docker stop` не будет нормального graceful shutdown.
+
+```dockerfile
+# Плохо: shell-форма — процесс запускается через /bin/sh -c,
+# не получает SIGTERM, корректного завершения не будет
+CMD node server.js
+
+# Хорошо: exec-форма, фиксированная команда + дефолтные флаги
+ENTRYPOINT ["node", "server.js"]
+CMD ["--port", "3000"]
+```
+
+Теперь `docker run myimage` запускается с портом 3000, а `docker run myimage --port 8080` — переопределяет только аргументы. Команда остаётся неизменной.
+
+## Линтинг и сканеры: доверяй, но проверяй
+
+Когда Dockerfile разросся, я стал ошибаться в мелочах: `apt-get update` без `install`, забытый `USER`, `ADD` вместо `COPY`. Часть из этого ловит `hadolint` — линтер Dockerfile. На собранный образ есть `dockle` и `Trivy` (или Snyk / Docker Scout) — они сканируют базовый образ и зависимости на известные CVE.
+
+```bash
+hadolint Dockerfile
+docker run --rm goodwithtech/dockle:latest myimage:latest
+trivy image myimage:latest
+```
+
+`hadolint` я держу прямо в VS Code (есть плагин), так что ошибки подсвечиваются ещё на этапе написания. Дальше можно приступать к сборке.
+
+## Что в итоге
+
+Если коротко, то к этому списку я прихожу с каждым новым проектом:
+
+- беру минимальный базовый образ (`alpine` / `slim` / `distroless` / `scratch`);
+- фиксирую версию тегом или digest, никакого `latest`;
+- кладу `.dockerignore`, и секреты туда — тоже;
+- копирую и ставлю зависимости **до** исходников;
+- объединяю `RUN` и чищу кэш пакетов в том же слое;
+- делаю multi-stage, чтобы финальный образ был без build-инструментов;
+- использую `COPY` вместо `ADD`;
+- запускаю от непривилегированного пользователя;
+- секреты передаю через BuildKit Secrets / runtime, не запекаю в образ;
+- пишу `ENTRYPOINT`/`CMD` в exec-форме;
+- прогоняю образ через `hadolint` и `trivy`.
+
+Когда я начал применять это не всё сразу, а по пунктам, даже старый «толстый» Dockerfile за пару итераций превратился во что-то, что не стыдно показать.
+
+---
+
+### Источники
+
+Материал собран и переработан из следующих зарубежных источников:
+
+1. [Building best practices — Docker Docs](https://docs.docker.com/build/building/best-practices/)
+2. [Writing a Dockerfile — Docker Docs](https://docs.docker.com/get-started/docker-concepts/building-images/writing-a-dockerfile/)
+3. [10 Docker Image Security Best Practices — Snyk](https://snyk.io/blog/10-docker-image-security-best-practices/)
+4. [Top 21 Dockerfile best practices for container security — Sysdig](https://www.sysdig.com/learn-cloud-native/dockerfile-best-practices)
+5. [Docker Build and Buildx best practices for optimized builds — Northflank](https://northflank.com/blog/docker-build-and-buildx-best-practices-for-optimized-builds)
+6. [Dockerfile Best Practices Explained — Dev.to](https://dev.to/kalkwst/dockerfile-best-practices-explained-interlude-post-2-3elj)
+7. [Best Practices for Building Efficient Docker Images — Medium](https://medium.com/@mehar.chand.cloud/best-practices-for-building-efficient-docker-images-20f1335eb202)
+8. [Docker Best Practices — Emma Benjaminson](https://sassafras13.github.io/DockerBestPractices/)
+9. [9 Docker Best Practices You Should Know — Alex Xu](https://www.linkedin.com/posts/alexxubyte_systemdesign-coding-interviewtips-activity-7300556507740266496-10Fi)
+10. [Understanding Multi-Stage Docker Builds — Blacksmith](https://www.blacksmith.sh/blog/understanding-multi-stage-docker-builds)

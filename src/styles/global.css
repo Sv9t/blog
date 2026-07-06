@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Плагин типографики даёт смысл utility-классам prose / prose-invert,
+   которые используются в BlogPost.astro для оформления markdown-контента. */
+@plugin "@tailwindcss/typography";
+
 /* Настройка темной темы по классу (аналог darkMode: 'class' из v3) */
 @variant dark (&:where(.dark, .dark *));
 
@@ -54,4 +58,21 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/*
+ * Dual-theme для блоков кода (Shiki).
+ *
+ * Astro с shikiConfig.themes рендерит оба варианта в инлайновых стилях:
+ *   - светлая тема применена напрямую (color / background-color);
+ *   - тёмная сложена в переменные --shiki-dark / --shiki-dark-bg.
+ *
+ * Поэтому в светлом режиме сайта ничего делать не нужно — Shiki уже
+ * показывает светлую тему. А в тёмном режиме (.dark на <html>) подменяем
+ * значения на тёмные переменные, чтобы блоки кода следовали за темой сайта.
+ */
+html.dark .astro-code,
+html.dark .astro-code span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg) !important;
 }
