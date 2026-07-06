@@ -1,6 +1,6 @@
 # DevOps Portfolio / Blog
 
-Личная страница и блог DevOps-инженера. Статичный сайт на **Astro 6 + React 19 + Tailwind v4**.
+Личная страница и блог DevOps-инженера. Статичный сайт на **Astro 7 + React 19 + Tailwind v4**.
 
 Сайт: **https://sv9t.ru/**
 
@@ -31,55 +31,50 @@ GitHub (push в main)
     ▼
 GitHub Actions (.github/workflows/deploy.yml)
     │
-    ├─► npm ci + npm run build  →  ./dist  (сборка на раннере, не на хостинге)
+    ├─► npm ci + astro check + astro build  →  ./dist
     │
-    └─► SFTP upload ./dist/*  →  Jino (shared-хостинг)
+    └─► upload-pages-artifact  →  GitHub Pages
                                     │
                                     ▼
-                          nginx Jino раздаёт статику
-                          + бесплатный TLS через панель Jino
+                          GitHub раздаёт статику на sv9t.ru
+                          + бесплатный TLS (Let's Encrypt от GitHub)
 ```
 
 **Почему так:**
-- Сборка на GitHub Runner — бесплатно, воспроизводимо, не грузит shared-хостинг
-- SFTP (порт 22) — на shared-хостинге Jino работает по логину/паролю **без белого списка IP**
-  (полноценный SSH потребовал бы внесения тысяч IP GitHub в whitelist)
-- nginx уже преднастроен Jino, ничего ставить не нужно
-- TLS-сертификат подключается в один клик через панель Jino (Let's Encrypt, автопродление)
+- Хостинг, сборка и TLS — бесплатно от GitHub, без внешних серверов и секретов
+- Деплой идёт прямо из репозитория: push → сборка → публикация, без ручных шагов
+- Кастомный домен привязывается файлом `public/CNAME` (sv9t.ru)
+- TLS-сертификат заказывается в один клик в настройках репозитория
 
 ## 📦 Настройка деплоя
 
-### Один раз: секреты GitHub
+### 1. Включить GitHub Pages
 
-В **Settings → Secrets and variables → Actions** добавьте:
+В репозитории **Settings → Pages → Build and deployment → Source** выберите
+**«GitHub Actions»**. Это разрешает воркфлоу `deploy.yml` публиковать сайт.
 
-| Secret | Что это | Пример |
-|---|---|---|
-| `SFTP_HOST` | сервер Jino | `myhosting.jino.ru` или IP |
-| `SFTP_PORT` | порт SFTP | `22` |
-| `SFTP_USER` | логин FTP/SFTP из панели | `u123456` |
-| `SFTP_PASSWORD` | пароль | — |
-| `SFTP_REMOTE_PATH` | путь от корня SFTP, куда класть сайт | `./` или `domains/sv9t.ru/` |
+### 2. Настроить DNS у регистратора домена
 
-### Один раз: домен и TLS в панели Jino
+Сайт живёт в корне домена `sv9t.ru` (apex), `www` редиректится на apex:
 
-1. В контрольной панели Jino привяжите домен `sv9t.ru` к контейнеру хостинга.
-2. У регистратора домена направьте DNS:
-   ```text
-   A     @     <IP-сервера-Jino>
-   CNAME www   sv9t.ru.
-   ```
-3. В панели Jino → раздел **SSL** → закажите бесплатный сертификат Let's Encrypt
-   для `sv9t.ru` (и `www`). Включите автопродление.
+```text
+A     @     185.199.108.153
+A     @     185.199.109.153
+A     @     185.199.110.153
+A     @     185.199.111.153
+CNAME www   sv9t.github.io.
+```
+
+### 3. Привязать домен в репозитории
+
+В **Settings → Pages → Custom domain** впишите `sv9t.ru` и подождите проверки DNS.
+Затем включите **Enforce HTTPS** — GitHub выпустит бесплатный сертификат Let's Encrypt.
 
 ### По пушу в main
 
 1. CI собирает сайт (`astro check` + `astro build`).
-2. SFTP заливает `dist/*` в `SFTP_REMOTE_PATH`, удаляя устаревшие файлы.
-3. Сайт обновляется на https://sv9t.ru/.
-
-> Если путь в `SFTP_REMOTE_PATH` окажется неверным, файлы зальются не туда —
-> поправьте секрет на правильный путь из панели Jino (раздел «Домены» → путь к сайту).
+2. Артефакт `./dist` загружается в GitHub Pages.
+3. Сайт обновляется на https://sv9t.ru/ (≈ через минуту после зелёной галки на коммите).
 
 ## 🗂️ Структура
 
@@ -93,13 +88,13 @@ src/
 └── styles/       # global.css (Tailwind v4 + @theme)
 
 .github/workflows/
-└── deploy.yml    # CI/CD: build Astro → SFTP deploy на Jino
+└── deploy.yml    # CI/CD: build Astro → публикация на GitHub Pages
 ```
 
 ## 🛠️ Стек
 
-- **Astro 6** — статичная генерация, Content Layer
+- **Astro 7** — статичная генерация, Content Layer
 - **React 19** — острова для интерактивных виджетов
 - **Tailwind CSS v4** — стилизация (через `@tailwindcss/vite`)
 - **TypeScript** — строгая типизация (`astro/tsconfigs/strict`)
-- **GitHub Actions + SFTP** — деплой на shared-хостинг без серверного рантайма
+- **GitHub Actions + Pages** — бесплатный деплой и хостинг без серверного рантайма
