@@ -1,0 +1,40 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import { formatDate, toISO } from '../lib/dates.ts';
+import { url } from '../lib/paths.ts';
+
+interface Props {
+  frontmatter: {
+    title: string;
+    description: string;
+    pubDate: Date;
+    tags?: string[];
+  };
+}
+
+const { frontmatter } = Astro.props;
+const formattedDate = formatDate(frontmatter.pubDate);
+---
+
+<BaseLayout title={frontmatter.title}>
+  <article class="max-w-3xl mx-auto">
+    <a href={url('blog')} class="text-primary hover:underline mb-8 inline-block">&larr; Назад к блогу</a>
+    
+    <h1 class="text-4xl font-extrabold text-gray-900 dark:text-white mb-4">{frontmatter.title}</h1>
+    
+    <div class="flex items-center gap-4 text-gray-500 dark:text-gray-400 mb-8 border-b border-gray-200 dark:border-dark-700 pb-6">
+      <time datetime={toISO(frontmatter.pubDate)}>{formattedDate}</time>
+      {frontmatter.tags && (
+        <div class="flex gap-2">
+          {frontmatter.tags.map((tag) => (
+            <span class="px-2 py-1 text-xs font-mono bg-gray-100 dark:bg-dark-800 text-primary border border-gray-200 dark:border-dark-700 rounded-full">#{tag}</span>
+          ))}
+        </div>
+      )}
+    </div>
+
+    <div class="prose dark:prose-invert prose-lg prose-headings:text-gray-900 dark:prose-headings:text-white prose-a:text-primary">
+      <slot />
+    </div>
+  </article>
+</BaseLayout>

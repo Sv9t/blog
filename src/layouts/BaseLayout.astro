@@ -1,0 +1,110 @@
+---
+import '../styles/global.css'; 
+import { url } from '../lib/paths.ts';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'Личная страница и блог DevOps-инженера: Kubernetes, Terraform, CI/CD, наблюдаемость и автоматизация инфраструктуры.' } = Astro.props;
+const siteName = 'Твое Имя';
+---
+
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={url('favicon.svg')} />
+    <title>{title} | DevOps Engineer</title>
+
+    <!-- Open Graph / Twitter Card -->
+    <meta property="og:title" content={`${title} | DevOps Engineer`} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="ru_RU" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Скрипт для мгновенного применения темы без FOUC.
+         Логика: сохранённая тема имеет приоритет, иначе — системная (prefers-color-scheme). -->
+    <script is:inline>
+      (function () {
+        const stored = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const useDark = stored ? stored === 'dark' : prefersDark;
+        document.documentElement.classList.toggle('dark', useDark);
+      })();
+    </script>
+  </head>
+  <body class="bg-white dark:bg-dark-900 text-gray-800 dark:text-gray-200 transition-colors duration-300 min-h-screen flex flex-col">
+    
+    <!-- Skip-link для пользователей клавиатуры/скринридеров -->
+    <a href="#main-content"
+       class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-primary focus:text-dark-900 focus:rounded-lg focus:font-bold">
+      Перейти к содержимому
+    </a>
+
+    <!-- Подключаем навигацию -->
+    <header class="border-b border-gray-200 dark:border-dark-700">
+      <nav class="max-w-5xl mx-auto px-6 py-4 flex justify-between items-center" aria-label="Основная навигация">
+        <a href={url('/')} class="text-xl font-bold text-gray-900 dark:text-white hover:text-primary transition-colors">
+          &lt;DevOps /&gt;
+        </a>
+        <div class="flex items-center gap-6">
+          <a href={url('/')} class="hover:text-primary transition-colors font-medium">Главная</a>
+          <a href={url('blog')} class="hover:text-primary transition-colors font-medium">Блог</a>
+          <button id="theme-toggle" type="button" aria-label="Переключить тему" class="p-2 rounded-lg bg-gray-100 dark:bg-dark-800 hover:bg-gray-200 dark:hover:bg-dark-700 transition-colors">
+            <!-- Иконки солнца/луны (SVG) -->
+            <svg class="w-5 h-5 hidden dark:block" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+            <svg class="w-5 h-5 block dark:hidden" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+          </button>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main-content" class="flex-grow max-w-5xl mx-auto px-6 py-10 w-full">
+      <slot />
+    </main>
+
+    <footer class="border-t border-gray-200 dark:border-dark-700 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+      &copy; {new Date().getFullYear()} {siteName}. Автоматизировано и развернуто с помощью CI/CD.
+    </footer>
+
+    <!-- Скрипт переключения темы.
+         Сохраняет выбор пользователя в localStorage, дефолт берётся из prefers-color-scheme. -->
+    <script is:inline>
+      (function () {
+        const btn = document.getElementById('theme-toggle');
+        if (!btn) return;
+
+        const getStored = () => localStorage.getItem('theme');
+
+        // Синхронизируем aria-pressed с текущим состоянием
+        const syncPressed = () => {
+          const isDark = document.documentElement.classList.contains('dark');
+          btn.setAttribute('aria-pressed', String(isDark));
+        };
+        syncPressed();
+
+        btn.addEventListener('click', () => {
+          const isDark = document.documentElement.classList.contains('dark');
+          const nextDark = !isDark;
+          document.documentElement.classList.toggle('dark', nextDark);
+          // Запоминаем только осознанный выбор пользователя
+          localStorage.setItem('theme', nextDark ? 'dark' : 'light');
+          syncPressed();
+        });
+
+        // Реагируем на смену системной темы, только если пользователь не делал явный выбор
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+          if (getStored()) return;
+          document.documentElement.classList.toggle('dark', e.matches);
+          syncPressed();
+        });
+      })();
+    </script>
+  </body>
+</html>

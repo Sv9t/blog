@@ -1,0 +1,73 @@
+# CI/CD: сборка Astro на GitHub Actions → деплой на Jino (shared) по SFTP.
+#
+# Почему так:
+#   • Сборка на GitHub Runner — воспроизводимо, бесплатно, не грузит хостинг.
+#   • SFTP (порт 22) — на shared-хостинге Jino не требует белого списка IP
+#     (в отличие от полноценного SSH), работает по логину/паролю.
+#   • nginx Jino уже преднастроен, раздаёт статику из корня домена.
+#   • TLS-сертификат подключается отдельно через панель Jino (бесплатный Let's Encrypt).
+#
+# Перед первым запуском задайте SECRETS в Settings → Secrets and variables → Actions:
+#   SFTP_HOST     — сервер Jino (например, myhosting.jino.ru или IP)
+#   SFTP_PORT     — порт SFTP (обычно 22)
+#   SFTP_USER     — логин SFTP/FTP из панели Jino
+#   SFTP_PASSWORD — пароль
+#   SFTP_REMOTE_PATH — путь от корня SFTP, куда класть сайт (например ./ или domains/sv9t.ru/)
+
+name: Build and Deploy via SFTP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Деплои идут последовательно — параллельные запуски могут перетереть файлы
+concurrency:
+  group: deploy-sftp
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & Deploy to Jino
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build site
+        # Сайт живёт в корне домена sv9t.ru → base='/'
+        run: npm run build
+
+      # Удаляем leftover, которые не нужны на проде (освобождает место и ускоряет аплоад)
+      - name: Prune build output
+        run: rm -rf dist/_astro/*.map
+
+      - name: Deploy via SFTP
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+        with:
+          server: ${{ secrets.SFTP_HOST }}
+          port: ${{ secrets.SFTP_PORT }}
+          username: ${{ secrets.SFTP_USER }}
+          password: ${{ secrets.SFTP_PASSWORD }}
+          # Локальная папка с собранным сайтом
+          local_path: './dist/*'
+          # Куда класть на сервере (корень сайта на Jino)
+          remote_path: ${{ secrets.SFTP_REMOTE_PATH }}
+          # sftp_provider: custom — для совместимости с серверами Jino
+          sftp_provider: 'custom'
+          # Удалять файлы на сервере, которых нет в новой сборке (чистим устаревшие ассеты)
+          delete_remote_files: true
+          # Парсим выходные файлы для прогресса
+          check_md5: false

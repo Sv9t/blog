@@ -1,0 +1,40 @@
+backend:
+  name: git-gateway
+  branch: main
+
+# Для локальной разработки (без бэкенда)
+local_backend: true
+
+media_folder: "public/images"
+public_folder: "/images"
+
+collections:
+  - name: "blog"
+    label: "Статьи блога"
+    folder: "src/content/blog"
+    create: true
+    slug: "{{slug}}"
+    format: "frontmatter"
+    fields:
+      - label: "Заголовок"
+        name: "title"
+        widget: "string"
+      
+      - label: "Описание"
+        name: "description"
+        widget: "text"
+      
+      - label: "Дата публикации"
+        name: "pubDate"
+        widget: "datetime"
+        date_format: "YYYY-MM-DD"
+        time_format: false
+      
+      - label: "Теги"
+        name: "tags"
+        widget: "list"
+        allow_add: true
+      
+      - label: "Текст статьи"
+        name: "body"
+        widget: "markdown"

@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/* Настройка темной темы по классу (аналог darkMode: 'class' из v3) */
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Темозависимые оттенки фона (не зависят от темы) */
+  --color-dark-900: #0f172a;
+  --color-dark-800: #1e293b;
+  --color-dark-700: #334155;
+}
+
+/*
+ * Primary-цвет делаем темозависимым через @theme inline:
+ * utility-классы (text-primary, bg-primary, border-primary, ring-primary ...)
+ * ссылаются на --primary, значение которого меняется под .dark.
+ *
+ * Контрастность (WCAG):
+ *   - light: #0369a1 (cyan-800) на белом ≈ 5.4:1  → проходит AA для текста
+ *   - dark:  #00d4ff на dark-900 (#0f172a) ≈ 9.6:1 → проходит AAA
+ * Раньше #00d4ff на белом давал ≈ 2.5:1 — провал AA.
+ */
+@theme inline {
+  --color-primary: var(--primary);
+}
+
+:root {
+  --primary: #0369a1;
+}
+
+.dark {
+  --primary: #00d4ff;
+}
+
+/* Явный фокус для клавиатуры — заметен в обеих темах */
+:where(a, button, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Чтобы якоря/skip-link не прилипали к верху при фокусе */
+:target {
+  scroll-margin-top: 1rem;
+}
+
+/* Уважаем пользователей с пониженной анимацией */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
