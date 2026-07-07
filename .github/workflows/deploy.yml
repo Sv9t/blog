@@ -45,7 +45,11 @@ jobs:
         uses: actions/configure-pages@v6
 
       - name: Install dependencies
-        run: npm ci
+        # npm install вместо npm ci: lock-файл генерируется/коммитится на Windows,
+        # где optional-пакеты для Linux (@img/sharp-linux-x64 → @emnapi/*@1.11.2)
+        # выкидываются. npm ci падает на рассинхронизации, npm install — разрешает
+        # недостающие пакеты сам. Кэш setup-node ускоряет повторные запуски.
+        run: npm install --no-audit --no-fund
 
       - name: Build site
         # astro check (типы/diagnostics) + astro build → ./dist
